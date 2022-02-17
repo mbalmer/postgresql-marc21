@@ -1,0 +1,99 @@
+---------------------------------------------------------------------------
+--
+-- marc.sql-
+--
+---------------------------------------------------------------------------
+
+DROP TABLE IF EXISTS test_marc;
+DROP TYPE IF EXISTS marc CASCADE;
+
+CREATE FUNCTION marc_in(cstring)
+   RETURNS marc
+   AS '_OBJWD_/marc'
+   LANGUAGE C IMMUTABLE STRICT;
+
+-- the output function 'marc_out' takes the internal representation and
+-- converts it into the textual representation.
+
+CREATE FUNCTION marc_out(marc)
+   RETURNS cstring
+   AS '_OBJWD_/marc'
+   LANGUAGE C IMMUTABLE STRICT;
+
+-- the binary input function 'marc_recv' takes a StringInfo buffer
+-- and turns its contents into the internal representation.
+
+-- CREATE FUNCTION marc_recv(internal)
+--    RETURNS marc
+--    AS '_OBJWD_/marc'
+--    LANGUAGE C IMMUTABLE STRICT;
+
+-- the binary output function 'marc_send' takes the internal representation
+-- and converts it into a (hopefully) platform-independent bytea string.
+
+-- CREATE FUNCTION marc_send(marc)
+--    RETURNS bytea
+--    AS '_OBJWD_/marc'
+--    LANGUAGE C IMMUTABLE STRICT;
+
+
+-- now, we can create the type. The internallength specifies the size of the
+-- memory block required to hold the type (we need two 8-byte doubles).
+
+CREATE TYPE marc (
+   internallength = variable,
+   input = marc_in,
+   output = marc_out,
+   -- receive = marc_recv,
+   -- send = marc_send,
+   alignment = int4
+);
+
+-----------------------------
+-- Using the new type:
+--	user-defined types can be used like ordinary built-in types.
+-----------------------------
+
+-- eg. we can use it in a table
+
+CREATE TABLE test_marc (
+	id	serial,
+	marc21	marc
+);
+
+select * from test_marc;
+
+-----------------------------
+-- Creating an operator for the new type:
+--	Let's define an add operator for complex types. Since POSTGRES
+--	supports function overloading, we'll use + as the add operator.
+--	(Operator names can be reused with different numbers and types of
+--	arguments.)
+-----------------------------
+
+-- first, define a function complex_add (also in complex.c)
+CREATE FUNCTION marc_field(marc, cstring)
+   RETURNS varchar
+   AS '_OBJWD_/marc'
+   LANGUAGE C IMMUTABLE STRICT;
+
+-- we can now define the operator. We show a binary operator here but you
+-- can also define unary operators by omitting either of leftarg or rightarg.
+CREATE OPERATOR @ (
+  leftarg = marc,
+   rightarg = cstring,
+   procedure = marc_field,
+   commutator = @
+);
+
+insert into test_marc(marc21) values ('30303838306e616d206132323030323533756920343530303030383030343130303030303032303030313830303034313033353030313830303035393034303030333330303037373038303030313130303131303130303030313930303132313234353030343630303134303235303030313730303138363236303030333330303230333330303030343730303233363530303030333530303238333530343030333230303331383530343030313130303335303635333030323230303336313934323030363530303338333935323031333330303434383939313030313230303538313939323030323430303539333939393030303930303631371e3931303431367331393832202020207c7c7c202020207c7c7c7c7c7c7c7c7c7c207c7c656e677c641e20201f61302d38353135372d3332382d321e20201f6148522d5a61464620697a6e4c311e20201f6148522d5a6146461f626872761f6348522d5a6146461f65707069616b1e20201f613032352e31371e31201f61436176652c20526f64657269636b1e31301f615261726520626f6f6b206c696272617269616e73686970202f1f63526f64657269636b20436176652e1e20201f61326e64207265762e2065642e1e20201f614c6f6e646f6e203a1f62432e2042696e676c65792c1f63313938322e1e20201f61313632207374722e203a201f625b31375d207374722e2073207461626c616d61203b201f63323320636d1e20201f6142696c6a65c5a16b6520697a61207376616b6f6720706f676c61766c6a611e20201f615374722e203134382d3135333a204269626c696f67726166696a611e20201f614b617a616c6f1e20201f6153706563696a616c6e65207a6269726b651e20201f624c49421f634b4e4a1f64495a4e207c203032352e3137207c20434156207c20721f68424730342e321f6943415620721f3642473034325f4341565f521e20201f77323030382d31302d31351f70313330313030303030311f72323030382d31302d31351f34301f30301f3642473034325f4341565f521f39311f6246465a471f31301f6f424730342e322043415620721f64323030382d31302d31351f74697a6e39312f361f7a301f38495a4e1f37301f634f5042471f794b4e4a1f6146465a471e20201f61697a6e39312f361e20201f61495a1f624e501f6331393931303431361f64501e20201f63311f64311e1d');
+
+-- select marc21 from test_marc;
+
+select marc_field(marc21, '020') as isbn from test_marc;
+
+select marc21@'020' as isbn from test_marc;
+
+-- clean up the example
+-- DROP TABLE test_marc;
+-- DROP TYPE marc CASCADE;
